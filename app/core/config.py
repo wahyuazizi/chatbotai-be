@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
 
-    # Databricks
-    DATABRICKS_HOST: str
-    DATABRICKS_TOKEN: str
-    DATABRICKS_INDEX_NAME: str
+    # Azure AI Search
+    AZURE_AI_SEARCH_ENDPOINT: str
+    AZURE_AI_SEARCH_KEY: str
+    AZURE_AI_SEARCH_INDEX_NAME: str
 
     # App
     USER_AGENT: str

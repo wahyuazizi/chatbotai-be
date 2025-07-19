@@ -9,6 +9,7 @@ beautifulsoup4
 pypdf
 langchain
 langchain-openai
-langchain-databricks
 langchain-community
 python-jose[cryptography]
+azure-search-documents
+langchain-azure-ai
