@@ -1,0 +1,25 @@
+[project]
+name = "chatbotai-be"
+version = "0.1.0"
+dependencies = [
+    "azure-identity>=1.23.1",
+    "beautifulsoup4>=4.13.4",
+    "fastapi>=0.116.1",
+    "langchain>=0.3.26",
+    "langchain-community>=0.3.27",
+    "langchain-databricks>=0.1.2",
+    "langchain-openai>=0.3.28",
+    "langchain-qdrant>=0.2.0",
+    "openai>=1.96.1",
+    "pydantic-settings>=2.10.1",
+    "pydantic[email]>=2.11.7",
+    "pypdf>=5.8.0",
+    "python-dotenv>=1.1.1",
+    "python-jose[cryptography]>=3.5.0",
+    "qdrant-client>=1.14.3",
+    "supabase>=2.16.0",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[tool.uv]
+# Optional, bisa kosong
