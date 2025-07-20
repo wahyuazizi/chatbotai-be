@@ -1,7 +1,12 @@
+import logging
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(levelname)s:     %(message)s')
 
 app = FastAPI(
     title="Chatbot AI Backend",

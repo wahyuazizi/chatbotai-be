@@ -11,3 +11,4 @@ class Source(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: List[Source]
+    debug_info: Optional[dict] = None

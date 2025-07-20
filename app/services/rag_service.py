@@ -1,3 +1,4 @@
+import logging
 from fastapi import HTTPException, status
 from langchain_community.vectorstores.azuresearch import AzureSearch
 from langchain_core.output_parsers import StrOutputParser
@@ -23,10 +24,10 @@ class RAGService:
                 index_name=self.index_name,
                 embedding_function=self.embedder.embed_query,
             )
-            self.retriever = self.vector_store.as_retriever()
-            print("Successfully connected to Azure AI Search.")
+            self.retriever = self.vector_store.as_retriever(k=10)
+            logging.info("Successfully connected to Azure AI Search.")
         except Exception as e:
-            print(f"Warning: Could not connect to Azure AI Search. Error: {e}")
+            logging.warning(f"Could not connect to Azure AI Search. Error: {e}")
             self.vector_store = None
             self.retriever = None
 
@@ -52,46 +53,81 @@ class RAGService:
             docs.extend(loader.load())
 
         if not docs:
-            print("No documents loaded. Ingestion skipped.")
+            logging.info("No documents loaded. Ingestion skipped.")
             return
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         split_docs = text_splitter.split_documents(docs)
 
-        print(f"Ingesting {len(split_docs)} document chunks into Azure AI Search...")
+        logging.info(f"Ingesting {len(split_docs)} document chunks into Azure AI Search...")
         
         # Add documents to the Azure AI Search index
         self.vector_store.add_documents(documents=split_docs)
         
-        print("Ingestion complete.")
+        logging.info("Ingestion complete.")
 
     def _format_docs(self, docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+        formatted_docs = []
+        for i, doc in enumerate(docs):
+            source = doc.metadata.get('source', 'Unknown Source').split('/')[-1] # Extract filename
+            page = doc.metadata.get('page_label', doc.metadata.get('page', 'Unknown Page')) # Get page label or page number
+            formatted_docs.append(f"Content from {source} (Page {page}):\n{doc.page_content}")
+        return "\n\n".join(formatted_docs)
 
     def get_answer(self, query: str) -> ChatResponse:
+        logging.info(f"get_answer method called with query: {query}")
         if not self.retriever:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Vector store is not available. Please check configuration and ingest data."
             )
 
-        template = """
-        You are a helpful assistant for a university. 
-        Use the following context to answer the question. If the context is not relevant or if you cannot find the answer within the context, please answer based on your general knowledge.
-        Always answer in Indonesian.
+        off_topic_template = """
+        Anda adalah asisten AI. Tugas Anda adalah menolak permintaan yang tidak pantas atau di luar topik dengan sopan dan mengarahkan kembali percakapan ke topik yang relevan.
+        Tolak permintaan untuk mengerjakan PR atau tugas sekolah.
+        Jawab secara eksklusif dalam bahasa Indonesia.
+        Arahkan kembali pengguna untuk bertanya tentang Universitas Hamzanwadi, khususnya Fakultas Teknik.
 
-        Context:
+        Contoh:
+        User: Kerjakan PR saya.
+        AI: Mohon maaf, saya tidak dapat membantu mengerjakan tugas. Silakan bertanya tentang Universitas Hamzanwadi.
+
+        User: Apa itu ibu kota perancis?
+        AI: Mohon maaf, saya hanya dapat memberikan informasi terkait Universitas Hamzanwadi. Ada yang bisa saya bantu seputar kampus?
+        
+        Pertanyaan Pengguna:
+        {question}
+        """
+
+        rag_template = """
+        Anda adalah asisten AI untuk Universitas Hamzanwadi.
+        Gunakan informasi dari bagian 'Konteks' berikut untuk menjawab pertanyaan. Jika Anda tidak dapat menemukan jawabannya di dalam konteks yang diberikan, nyatakan bahwa informasi tersebut tidak tersedia dalam dokumen yang Anda miliki.
+        Jangan gunakan pengetahuan umum Anda untuk menjawab pertanyaan yang seharusnya dijawab dari konteks.
+        Selalu jawab dalam bahasa Indonesia.
+        Jika sesuai, arahkan percakapan untuk membahas Fakultas Teknik.
+
+        Konteks:
         {context}
 
-        Question:
+        Pertanyaan:
         {question}
         """
         
-        prompt = ChatPromptTemplate.from_template(template)
+        # Preliminary check for off-topic questions
+        off_topic_prompt = ChatPromptTemplate.from_template(off_topic_template)
+        off_topic_chain = off_topic_prompt | self.llm | StrOutputParser()
+        
+        # Note: This is a simplified check. A more robust implementation might use a separate classifier.
+        # is_off_topic = "pr" in query.lower() or "tugas" in query.lower() # Temporarily disabled for debugging
+
+        # if is_off_topic: # Temporarily disabled for debugging
+        #     answer = off_topic_chain.invoke({"question": query})
+        #     return ChatResponse(answer=answer, sources=[]) # Temporarily disabled for debugging
+
+        prompt = ChatPromptTemplate.from_template(rag_template)
 
         rag_chain = (
-            {"context": self.retriever | self._format_docs, "question": RunnablePassthrough()}
-            | prompt
+            prompt
             | self.llm
             | StrOutputParser()
         )
@@ -99,8 +135,15 @@ class RAGService:
         # Get relevant documents first to include in the response
         relevant_docs = self.retriever.get_relevant_documents(query)
         
+        context_string = self._format_docs(relevant_docs)
+
         # Invoke the chain to get the answer
-        answer = rag_chain.invoke(query)
+        answer = rag_chain.invoke({"context": context_string, "question": query})
+
+        # Fallback for out-of-scope questions that weren't caught by the initial check
+        # if not relevant_docs: # Temporarily disabled for debugging
+        #     answer = off_topic_chain.invoke({"question": query})
+        #     return ChatResponse(answer=answer, sources=[]) # Temporarily disabled for debugging
 
         # Format sources
         sources = [
@@ -110,6 +153,9 @@ class RAGService:
             ) for doc in relevant_docs
         ]
 
-        return ChatResponse(answer=answer, sources=sources)
+        debug_info = {
+            "relevant_docs": [doc.dict() for doc in relevant_docs], # Convert to dict for serialization
+            "context_string": context_string
+        }
 
-rag_service = RAGService()
+        return ChatResponse(answer=answer, sources=sources, debug_info=debug_info)
