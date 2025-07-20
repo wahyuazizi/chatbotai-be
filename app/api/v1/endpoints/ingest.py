@@ -1,8 +1,9 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from app.services.rag_service import rag_service
+from app.utils.security import has_role
 
 router = APIRouter()
 
@@ -11,7 +12,7 @@ class IngestRequest(BaseModel):
     urls: Optional[List[str]] = Field(None, description="List of URLs to ingest.")
 
 @router.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_data(request: IngestRequest, background_tasks: BackgroundTasks):
+async def ingest_data(request: IngestRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(has_role(["admin"]))):
     """
     Endpoint to ingest data from files and URLs into the vector store.
     This process runs in the background.

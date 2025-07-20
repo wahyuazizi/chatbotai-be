@@ -13,6 +13,7 @@ class AuthService:
             user = self.supabase_client.auth.sign_up({
                 "email": user_data.email,
                 "password": user_data.password,
+                "data": {"role": user_data.role}
             })
             return user
         except AuthApiError as e:
@@ -28,11 +29,13 @@ class AuthService:
 
     def login_user(self, user_data: UserLogin):
         try:
-            session = self.supabase_client.auth.sign_in_with_password({
+            session_response = self.supabase_client.auth.sign_in_with_password({
                 "email": user_data.email,
                 "password": user_data.password,
             })
-            return session
+            if session_response.user and session_response.user.user_metadata:
+                session_response.user.role = session_response.user.user_metadata.get("role", "user")
+            return session_response
         except AuthApiError as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,8 +49,10 @@ class AuthService:
 
     def get_user_from_token(self, token: str):
         try:
-            user = self.supabase_client.auth.get_user(token)
-            return user
+            user_response = self.supabase_client.auth.get_user(token)
+            if user_response.user and user_response.user.user_metadata:
+                user_response.user.role = user_response.user.user_metadata.get("role", "user")
+            return user_response.user
         except AuthApiError:
             return None
         except Exception:
