@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      PYTHONPATH: /app
+    # Add any environment variables your application needs here, e.g.:
+    # SUPABASE_URL: your_supabase_url
+    # SUPABASE_KEY: your_supabase_key
+    # AZURE_CLIENT_ID: your_azure_client_id
+    # AZURE_TENANT_ID: your_azure_tenant_id
+    # AZURE_CLIENT_SECRET: your_azure_client_secret
+    # OPENAI_API_KEY: your_openai_api_key
