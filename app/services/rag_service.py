@@ -24,12 +24,41 @@ class RAGService:
                 index_name=self.index_name,
                 embedding_function=self.embedder.embed_query,
             )
-            self.retriever = self.vector_store.as_retriever(k=10)
+            self.retriever = self.vector_store.as_retriever(k=8) # Optimized k value
             logging.info("Successfully connected to Azure AI Search.")
         except Exception as e:
-            logging.warning(f"Could not connect to Azure AI Search. Error: {e}")
+            logging.error(f"Could not connect to Azure AI Search. Error: {e}")
             self.vector_store = None
             self.retriever = None
+        
+        self.rag_chain = self._build_rag_chain()
+
+    def _build_rag_chain(self):
+        """Builds the RAG chain with a unified prompt."""
+        template = """
+        Anda adalah asisten AI untuk Universitas Hamzanwadi.
+        Tugas Anda adalah menjawab pertanyaan HANYA berdasarkan 'Konteks' yang diberikan.
+
+        ATURAN:
+        1.  Jika pertanyaan relevan dengan konteks, berikan jawaban yang informatif dan akurat dari sumber yang disediakan.
+        2.  Jika pertanyaan TIDAK relevan (misalnya, tentang ibu kota Prancis, mengerjakan PR), tolak dengan sopan dan arahkan kembali pengguna untuk bertanya tentang Universitas Hamzanwadi. Jangan menjawab pertanyaan di luar topik.
+        3.  Selalu jawab dalam Bahasa Indonesia.
+        4.  Jika konteks tidak berisi jawaban, katakan Anda tidak dapat menemukan informasinya.
+        5.  Jika sesuai, arahkan percakapan untuk membahas Fakultas Teknik.
+
+        Konteks:
+        {context}
+
+        Pertanyaan:
+        {question}
+        """
+        prompt = ChatPromptTemplate.from_template(template)
+
+        return (
+            prompt
+            | self.llm
+            | StrOutputParser()
+        )
 
     def ingest_data(self, file_paths: list[str] = None, urls: list[str] = None):
         """Ingests data from PDF files and URLs, creates embeddings, and adds them to Azure AI Search."""
@@ -61,16 +90,17 @@ class RAGService:
 
         logging.info(f"Ingesting {len(split_docs)} document chunks into Azure AI Search...")
         
-        # Add documents to the Azure AI Search index
         self.vector_store.add_documents(documents=split_docs)
         
         logging.info("Ingestion complete.")
 
     def _format_docs(self, docs):
+        if not docs:
+            return "Tidak ada konteks yang relevan ditemukan."
         formatted_docs = []
         for i, doc in enumerate(docs):
-            source = doc.metadata.get('source', 'Unknown Source').split('/')[-1] # Extract filename
-            page = doc.metadata.get('page_label', doc.metadata.get('page', 'Unknown Page')) # Get page label or page number
+            source = doc.metadata.get('source', 'Unknown Source').split('/')[-1]
+            page = doc.metadata.get('page_label', doc.metadata.get('page', 'Unknown Page'))
             formatted_docs.append(f"Content from {source} (Page {page}):\n{doc.page_content}")
         return "\n\n".join(formatted_docs)
 
@@ -82,70 +112,11 @@ class RAGService:
                 detail="Vector store is not available. Please check configuration and ingest data."
             )
 
-        off_topic_template = """
-        Anda adalah asisten AI. Tugas Anda adalah menolak permintaan yang tidak pantas atau di luar topik dengan sopan dan mengarahkan kembali percakapan ke topik yang relevan.
-        Tolak permintaan untuk mengerjakan PR atau tugas sekolah.
-        Jawab secara eksklusif dalam bahasa Indonesia.
-        Arahkan kembali pengguna untuk bertanya tentang Universitas Hamzanwadi, khususnya Fakultas Teknik.
-
-        Contoh:
-        User: Kerjakan PR saya.
-        AI: Mohon maaf, saya tidak dapat membantu mengerjakan tugas. Silakan bertanya tentang Universitas Hamzanwadi.
-
-        User: Apa itu ibu kota perancis?
-        AI: Mohon maaf, saya hanya dapat memberikan informasi terkait Universitas Hamzanwadi. Ada yang bisa saya bantu seputar kampus?
-        
-        Pertanyaan Pengguna:
-        {question}
-        """
-
-        rag_template = """
-        Anda adalah asisten AI untuk Universitas Hamzanwadi.
-        Gunakan informasi dari bagian 'Konteks' berikut untuk menjawab pertanyaan. Jika Anda tidak dapat menemukan jawabannya di dalam konteks yang diberikan, nyatakan bahwa informasi tersebut tidak tersedia dalam dokumen yang Anda miliki.
-        Jangan gunakan pengetahuan umum Anda untuk menjawab pertanyaan yang seharusnya dijawab dari konteks.
-        Selalu jawab dalam bahasa Indonesia.
-        Jika sesuai, arahkan percakapan untuk membahas Fakultas Teknik.
-
-        Konteks:
-        {context}
-
-        Pertanyaan:
-        {question}
-        """
-        
-        # Preliminary check for off-topic questions
-        off_topic_prompt = ChatPromptTemplate.from_template(off_topic_template)
-        off_topic_chain = off_topic_prompt | self.llm | StrOutputParser()
-        
-        # Note: This is a simplified check. A more robust implementation might use a separate classifier.
-        # is_off_topic = "pr" in query.lower() or "tugas" in query.lower() # Temporarily disabled for debugging
-
-        # if is_off_topic: # Temporarily disabled for debugging
-        #     answer = off_topic_chain.invoke({"question": query})
-        #     return ChatResponse(answer=answer, sources=[]) # Temporarily disabled for debugging
-
-        prompt = ChatPromptTemplate.from_template(rag_template)
-
-        rag_chain = (
-            prompt
-            | self.llm
-            | StrOutputParser()
-        )
-        
-        # Get relevant documents first to include in the response
         relevant_docs = self.retriever.get_relevant_documents(query)
-        
         context_string = self._format_docs(relevant_docs)
 
-        # Invoke the chain to get the answer
-        answer = rag_chain.invoke({"context": context_string, "question": query})
+        answer = self.rag_chain.invoke({"context": context_string, "question": query})
 
-        # Fallback for out-of-scope questions that weren't caught by the initial check
-        # if not relevant_docs: # Temporarily disabled for debugging
-        #     answer = off_topic_chain.invoke({"question": query})
-        #     return ChatResponse(answer=answer, sources=[]) # Temporarily disabled for debugging
-
-        # Format sources
         sources = [
             Source(
                 source=doc.metadata.get('source', 'Unknown'),
@@ -154,8 +125,13 @@ class RAGService:
         ]
 
         debug_info = {
-            "relevant_docs": [doc.dict() for doc in relevant_docs], # Convert to dict for serialization
+            "relevant_docs": [doc.dict() for doc in relevant_docs],
             "context_string": context_string
         }
 
         return ChatResponse(answer=answer, sources=sources, debug_info=debug_info)
+
+# --- Singleton Instance ---
+# Create a single, reusable instance of the RAGService.
+# This is more efficient than creating a new instance for every request.
+rag_service_instance = RAGService()
