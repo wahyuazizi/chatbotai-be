@@ -129,12 +129,6 @@ class RAGService:
             "question": query
         })
 
-        print("\n--- FULL PROMPT SENT TO LLM ---")
-        print(f"Context: {context_string}")
-        print(f"Chat History: {chat_history}")
-        print(f"Question: {query}")
-        print("--- END FULL PROMPT ---\n")
-
         sources = [
             Source(
                 source=doc.metadata.get('source', 'Unknown'),

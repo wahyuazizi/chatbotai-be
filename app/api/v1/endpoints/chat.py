@@ -15,8 +15,7 @@ async def get_chat_answer(
     history_service: ChatHistoryService = Depends(lambda: chat_history_service_instance),
     user_context: Tuple[Optional[str], Optional[str]] = Depends(get_optional_current_user_context)
 ) -> ChatResponse:
-    user_id, access_token = user_context # Unpack user_id and access_token
-    print(f"DEBUG: User ID received in endpoint: {user_id}") # Added for debugging
+    user_id, access_token = user_context
     """
     Endpoint to get an answer from the RAG chatbot.
     """

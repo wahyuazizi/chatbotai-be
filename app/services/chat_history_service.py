@@ -21,11 +21,15 @@ class ChatHistoryService:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         
         if access_token:
+            logging.info("Attempting to authenticate Supabase client with access token.")
             try:
                 # Set the access token for the client to make authenticated requests
                 client.postgrest.auth(access_token)
+                logging.info("Supabase client authenticated with access token.")
             except Exception as e:
                 logging.error(f"Failed to set access token on Supabase client: {e}")
+        else:
+            logging.info("No access token provided. Using anonymous Supabase client.")
         return client
 
     def add_message(self, session_id: str, role: str, content: str, user_id: Optional[str] = None, access_token: Optional[str] = None):

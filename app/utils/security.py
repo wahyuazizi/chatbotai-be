@@ -51,10 +51,8 @@ async def get_optional_current_user_context(request: Request) -> Tuple[Optional[
 
     # Extract token string (remove "Bearer ")
     token_string = auth_header.split(" ")[-1]
-    logger.info(f"Authorization header found. Token starts with: {token_string[:30]}...")
     
     try:
-        logger.info(f"Attempting to decode token: {token_string[:30]}...")
         payload = jwt.decode(
             token_string,
             settings.SUPABASE_JWT_SECRET,
@@ -63,10 +61,6 @@ async def get_optional_current_user_context(request: Request) -> Tuple[Optional[
             audience="authenticated"
         )
         user_id = payload.get("sub") # "sub" claim usually holds the user ID (UID)
-        if user_id:
-            logger.info(f"Token decoded successfully. User ID: {user_id}")
-        else:
-            logger.warning("Token decoded, but 'sub' claim (user ID) is missing from payload.")
         return user_id, token_string
     except jwt.ExpiredSignatureError:
         logger.warning("JWT token has expired.")
