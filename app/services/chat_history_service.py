@@ -1,5 +1,5 @@
 
-from typing import Optional
+from typing import Optional, List, Dict
 import logging
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
@@ -51,16 +51,16 @@ class ChatHistoryService:
         except Exception as e:
             logging.error(f"Error adding message to Supabase: {e}")
 
-    def get_history(self, session_id: str, user_id: Optional[str] = None, access_token: Optional[str] = None, limit: int = 5) -> str:
+    def get_history(self, session_id: str, user_id: Optional[str] = None, access_token: Optional[str] = None, limit: int = 5) -> List[Dict[str, str]]: # Changed return type
         """
-        Retrieves chat history from the last 24 hours and formats it into a single string.
+        Retrieves chat history from the last 24 hours and returns it as a list of message dictionaries.
         It prioritizes fetching by user_id if available, otherwise falls back to session_id.
         Limits the number of messages returned to the 'limit' parameter (default 5).
         """
         supabase_client = self._get_authenticated_supabase_client(access_token)
         if not supabase_client:
             logging.error("Supabase client not available. Cannot get history.")
-            return "Riwayat obrolan tidak tersedia."
+            return [] # Return empty list instead of error string
 
         try:
             twenty_four_hours_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
@@ -78,18 +78,39 @@ class ChatHistoryService:
             response = query.gte("created_at", twenty_four_hours_ago).order("created_at", desc=True).limit(limit).execute()
 
             if not response.data:
-                return "Tidak ada riwayat obrolan baru."
+                return [] # Return empty list
 
-            # Reverse the order to display chronologically for the prompt
+            # Sort the messages chronologically before returning
             ordered_messages = sorted(response.data, key=lambda x: x['created_at'])
 
-            formatted_history = "\n".join(
-                [f"{msg['role']}: {msg['content']}" for msg in ordered_messages]
-            )
-            return formatted_history
+            # Return list of dicts with only role and content
+            return [{"role": msg['role'], "content": msg['content']} for msg in ordered_messages]
         except Exception as e:
             logging.error(f"Error getting history from Supabase: {e}")
-            return "Terjadi kesalahan saat mengambil riwayat obrolan."
+            return [] # Return empty list on error
+
+    async def clear_history(self, session_id: Optional[str] = None, user_id: Optional[str] = None, access_token: Optional[str] = None):
+        """
+        Clears chat history for a given session_id or user_id.
+        Prioritizes user_id if provided.
+        """
+        supabase_client = self._get_authenticated_supabase_client(access_token)
+        if not supabase_client:
+            logging.error("Supabase client not available. Cannot clear history.")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Supabase client not available.")
+
+        try:
+            if user_id:
+                response = await supabase_client.table("chat_messages").delete().eq("user_id", user_id).execute()
+                logging.info(f"Cleared history for user_id: {user_id}. Response: {response.data}")
+            elif session_id:
+                response = await supabase_client.table("chat_messages").delete().eq("session_id", session_id).execute()
+                logging.info(f"Cleared history for session_id: {session_id}. Response: {response.data}")
+            else:
+                raise ValueError("Either session_id or user_id must be provided to clear history.")
+        except Exception as e:
+            logging.error(f"Error clearing history from Supabase: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to clear history: {e}")
 
 # Singleton instance
 chat_history_service_instance = ChatHistoryService()

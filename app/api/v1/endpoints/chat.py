@@ -1,12 +1,23 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel # Added BaseModel
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.rag_service import rag_service_instance, RAGService
 from app.services.chat_history_service import chat_history_service_instance, ChatHistoryService
 from app.utils.security import get_optional_current_user_context
 
 router = APIRouter()
+
+# Define a new schema for chat messages in history
+class HistoryMessage(BaseModel):
+    role: str
+    content: str
+
+# Define a new response model for chat history
+class ChatHistoryResponse(BaseModel):
+    messages: List[HistoryMessage]
+    session_id: str
 
 @router.post("", response_model=ChatResponse)
 async def get_chat_answer(
@@ -49,3 +60,44 @@ async def get_chat_answer(
     response.session_id = session_id
     
     return response
+
+@router.get("/history", response_model=ChatHistoryResponse) # Changed response_model
+async def get_chat_history(
+    session_id: Optional[str] = None, # Allow session_id as query param for anonymous users
+    history_service: ChatHistoryService = Depends(lambda: chat_history_service_instance),
+    user_context: Tuple[Optional[str], Optional[str]] = Depends(get_optional_current_user_context)
+) -> ChatHistoryResponse: # Changed return type
+    user_id, access_token = user_context
+    
+    # Prioritize user_id for logged-in users, otherwise use session_id
+    if user_id:
+        history_messages = history_service.get_history(session_id=session_id, user_id=user_id, access_token=access_token)
+    elif session_id:
+        history_messages = history_service.get_history(session_id=session_id, user_id=None, access_token=access_token)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either session_id or a valid authentication token must be provided."
+        )
+    
+    return ChatHistoryResponse(messages=history_messages, session_id=session_id or "N/A") # Changed return
+
+@router.post("/clear")
+async def clear_chat_history(
+    session_id: str = None, # Allow session_id in body for anonymous users
+    history_service: ChatHistoryService = Depends(lambda: chat_history_service_instance),
+    user_context: Tuple[Optional[str], Optional[str]] = Depends(get_optional_current_user_context)
+):
+    user_id, access_token = user_context
+
+    if user_id:
+        await history_service.clear_history(user_id=user_id, access_token=access_token)
+        return {"message": "Chat history cleared for authenticated user."}
+    elif session_id:
+        await history_service.clear_history(session_id=session_id, access_token=access_token)
+        return {"message": "Chat history cleared for anonymous session."}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either session_id or a valid authentication token must be provided to clear history."
+        )
