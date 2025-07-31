@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: str
     SUPABASE_KEY: str
+    SUPABASE_JWT_SECRET: str
 
     # Azure AI Search
     AZURE_AI_SEARCH_ENDPOINT: str

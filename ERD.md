@@ -1,42 +1,53 @@
-# ERD (Entity-Relationship Diagram)
 
-Diagram ini memodelkan struktur entitas dan relasi untuk database aplikasi. Ini didasarkan pada skema yang ada di `app/schemas/`.
+# Entity-Relationship Diagram (ERD) - Chat History
 
-> **Catatan**: Data yang di-ingest dan disimpan di Azure AI Search tidak digambarkan di sini karena merupakan *data store* semi-terstruktur/dokumen, bukan bagian dari database relasional utama.
+Diagram ini menggambarkan struktur database untuk menyimpan riwayat percakapan chatbot, yang terintegrasi dengan sistem autentikasi pengguna Supabase.
 
-```mermaid
-erDiagram
-    USERS {
-        int user_id PK "Primary Key"
-        varchar username "Unique"
-        varchar email "Unique"
-        varchar hashed_password
-        datetime created_at
-    }
+## Diagram
 
-    CHAT_SESSIONS {
-        int session_id PK "Primary Key"
-        int user_id FK "Foreign Key to USERS"
-        varchar title "e.g., '''Chat about DFDs'''"
-        datetime start_time
-    }
-
-    CHAT_MESSAGES {
-        int message_id PK "Primary Key"
-        int session_id FK "Foreign Key to CHAT_SESSIONS"
-        varchar sender "'''user''' or '''ai'''"
-        text content
-        datetime timestamp
-    }
-
-    USERS ||--o{ CHAT_SESSIONS : "has"
-    CHAT_SESSIONS ||--o{ CHAT_MESSAGES : "contains"
 ```
-> **Penjelasan Entitas:**
-> -   **USERS**: Menyimpan informasi kredensial dan data pengguna. Setiap pengguna unik.
-> -   **CHAT_SESSIONS**: Mewakili satu sesi percakapan yang dimiliki oleh seorang pengguna. Ini memungkinkan pengelompokan pesan.
-> -   **CHAT_MESSAGES**: Menyimpan setiap pesan individual dalam sebuah sesi, lengkap dengan pengirimnya (user atau AI) dan isinya.
->
-> **Relasi:**
-> -   Seorang `USER` dapat memiliki banyak (`o{`) `CHAT_SESSIONS`.
-> -   Satu `CHAT_SESSION` dapat berisi banyak (`o{`) `CHAT_MESSAGES`.
++---------------------+       +---------------------+
+|     auth.users      |       |  public.chat_messages |
+| (Tabel Supabase)    |       +---------------------+
++---------------------+       | id (PK)             |
+| id (PK)             |------>| user_id (FK)        |
+| email               |       | session_id          |
+| ...                 |       | role                |
++---------------------+       | content             |
+                              | created_at          |
+                              +---------------------+
+```
+
+---
+
+## Deskripsi Detail
+
+### Tabel: `public.chat_messages`
+
+Tabel ini adalah inti dari sistem riwayat obrolan. Setiap baris mewakili satu pesan yang dikirim oleh pengguna atau oleh asisten AI.
+
+| Nama Kolom   | Tipe Data                 | Deskripsi                                                                                             | Kendala (Constraints)      |
+|--------------|---------------------------|-------------------------------------------------------------------------------------------------------|----------------------------|
+| `id`         | `UUID`                    | Kunci utama (Primary Key) unik untuk setiap pesan. Dibuat secara otomatis.                            | `PRIMARY KEY`, `NOT NULL`  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE`| Waktu kapan pesan dibuat. Otomatis diisi dengan waktu saat ini.                                         | `DEFAULT now()`, `NOT NULL`|
+| `session_id` | `UUID`                    | Pengidentifikasi unik untuk satu sesi browser. Membantu membedakan tab/perangkat yang berbeda dari pengguna yang sama. | `NOT NULL`                 |
+| `role`       | `TEXT`                    | Menandakan pengirim pesan. Nilainya bisa 'user' atau 'assistant'.                                       | `NOT NULL`                 |
+| `content`    | `TEXT`                    | Isi teks dari pesan yang dikirim.                                                                     | `NOT NULL`                 |
+| `user_id`    | `UUID`                    | Kunci asing (Foreign Key) yang merujuk ke `auth.users.id`. Menautkan pesan ke pengguna yang terautentikasi. | `FOREIGN KEY (auth.users.id)`   |
+
+### Tabel: `auth.users` (Disediakan oleh Supabase)
+
+Ini adalah tabel bawaan dari Supabase Auth yang menyimpan data semua pengguna yang terdaftar.
+
+| Nama Kolom | Tipe Data | Deskripsi                                       | Kendala (Constraints) |
+|------------|-----------|-------------------------------------------------|-----------------------|
+| `id`       | `UUID`    | Kunci utama (Primary Key) unik untuk setiap pengguna. | `PRIMARY KEY`         |
+| `email`    | `TEXT`    | Alamat email pengguna.                          | `UNIQUE`, `NOT NULL`  |
+| `...`      | `...`     | Kolom lain yang dikelola oleh Supabase (misalnya, `encrypted_password`, `role`, `user_metadata`). |                       |
+
+### Hubungan
+
+*   **`auth.users` ke `public.chat_messages` (Satu-ke-Banyak)**
+    *   Satu pengguna (`user`) dapat memiliki banyak pesan (`chat_messages`).
+    *   Hubungan ini diimplementasikan melalui kolom `chat_messages.user_id` yang merujuk ke `auth.users.id`.
+    *   Untuk pengguna anonim, `user_id` akan bernilai `NULL`.

@@ -1,3 +1,4 @@
+from typing import Optional
 import logging
 from fastapi import HTTPException, status
 from langchain_community.vectorstores.azuresearch import AzureSearch
@@ -10,6 +11,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from app.core.clients import azure_llm, azure_embedder
 from app.core.config import settings
 from app.schemas.chat import ChatResponse, Source
+from app.services.chat_history_service import chat_history_service_instance
 
 class RAGService:
     def __init__(self):
@@ -32,24 +34,28 @@ class RAGService:
             self.retriever = None
         
         self.rag_chain = self._build_rag_chain()
+        self.history_service = chat_history_service_instance
 
     def _build_rag_chain(self):
         """Builds the RAG chain with a unified prompt."""
         template = """
         Anda adalah asisten AI untuk Universitas Hamzanwadi.
-        Tugas Anda adalah menjawab pertanyaan HANYA berdasarkan 'Konteks' yang diberikan.
+        Tugas Anda adalah menjawab pertanyaan HANYA berdasarkan 'Konteks' dan 'Riwayat Obrolan' yang diberikan.
 
         ATURAN:
-        1.  Jika pertanyaan relevan dengan konteks, berikan jawaban yang informatif dan akurat dari sumber yang disediakan.
-        2.  Jika pertanyaan TIDAK relevan (misalnya, tentang ibu kota Prancis, mengerjakan PR), tolak dengan sopan dan arahkan kembali pengguna untuk bertanya tentang Universitas Hamzanwadi. Jangan menjawab pertanyaan di luar topik.
+        1.  Jika pertanyaan relevan dengan konteks atau riwayat, berikan jawaban yang informatif dan akurat.
+        2.  Jika pertanyaan TIDAK relevan (misalnya, tentang ibu kota Prancis), tolak dengan sopan.
         3.  Selalu jawab dalam Bahasa Indonesia.
         4.  Jika konteks tidak berisi jawaban, katakan Anda tidak dapat menemukan informasinya.
-        5.  Jika sesuai, arahkan percakapan untuk membahas Fakultas Teknik.
+        5.  Gunakan riwayat obrolan untuk memahami pertanyaan lanjutan dan menjaga percakapan tetap mengalir.
 
-        Konteks:
+        Riwayat Obrolan:
+        {chat_history}
+
+        Konteks Dokumen:
         {context}
 
-        Pertanyaan:
+        Pertanyaan: 
         {question}
         """
         prompt = ChatPromptTemplate.from_template(template)
@@ -104,7 +110,7 @@ class RAGService:
             formatted_docs.append(f"Content from {source} (Page {page}):\n{doc.page_content}")
         return "\n\n".join(formatted_docs)
 
-    def get_answer(self, query: str) -> ChatResponse:
+    def get_answer(self, query: str, session_id: str, user_id: Optional[str] = None, access_token: Optional[str] = None) -> ChatResponse:
         logging.info(f"get_answer method called with query: {query}")
         if not self.retriever:
             raise HTTPException(
@@ -112,10 +118,22 @@ class RAGService:
                 detail="Vector store is not available. Please check configuration and ingest data."
             )
 
-        relevant_docs = self.retriever.get_relevant_documents(query)
+        # Use the new `invoke` method to avoid deprecation warnings
+        relevant_docs = self.retriever.invoke(query)
         context_string = self._format_docs(relevant_docs)
+        chat_history = self.history_service.get_history(session_id=session_id, user_id=user_id, access_token=access_token)
 
-        answer = self.rag_chain.invoke({"context": context_string, "question": query})
+        answer = self.rag_chain.invoke({
+            "context": context_string, 
+            "chat_history": chat_history,
+            "question": query
+        })
+
+        print("\n--- FULL PROMPT SENT TO LLM ---")
+        print(f"Context: {context_string}")
+        print(f"Chat History: {chat_history}")
+        print(f"Question: {query}")
+        print("--- END FULL PROMPT ---\n")
 
         sources = [
             Source(
@@ -129,7 +147,12 @@ class RAGService:
             "context_string": context_string
         }
 
-        return ChatResponse(answer=answer, sources=sources, debug_info=debug_info)
+        return ChatResponse(
+            answer=answer, 
+            sources=sources, 
+            session_id=session_id, # Pass the session_id to the response model
+            debug_info=debug_info
+        )
 
 # --- Singleton Instance ---
 # Create a single, reusable instance of the RAGService.
