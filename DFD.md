@@ -1,146 +1,135 @@
+# Data Flow Diagram (DFD) Sistem Chatbot AI
 
-# Data Flow Diagram (DFD)
+Dokumen ini merincikan Data Flow Diagram (DFD) untuk sistem Chatbot AI. DFD digunakan untuk memodelkan alur data melalui sistem, menggambarkan bagaimana data diproses dan disimpan oleh berbagai komponen sistem.
 
-Dokumen ini menjelaskan aliran data dalam aplikasi Chatbot AI, dengan fokus pada integrasi autentikasi pengguna.
+## Entitas Eksternal dan Penyimpanan Data
+
+- **Entitas Eksternal:**
+  - **Pengguna (User):** Individu yang berinteraksi dengan chatbot untuk mendapatkan informasi.
+  - **Admin:** Pengguna dengan hak akses khusus untuk mengelola sumber data pengetahuan (knowledge base).
+- **Penyimpanan Data (Data Store):**
+  - **D1 - Indeks Pencarian (Azure AI Search):** Menyimpan data dan vektor dari dokumen yang telah diproses untuk pencarian cepat (retrieval).
+  - **D2 - Database Aplikasi (Azure Cosmos DB/PostgreSQL):** Menyimpan data pengguna, riwayat chat, dan informasi terkait aplikasi lainnya.
 
 ---
 
 ## Level 0: Diagram Konteks
 
-Diagram ini menunjukkan interaksi antara sistem secara keseluruhan dengan entitas eksternal.
+Diagram Konteks memberikan gambaran umum tingkat tinggi dari keseluruhan sistem. Ini menunjukkan entitas eksternal utama yang berinteraksi dengan sistem dan aliran data dasar antara mereka dan sistem.
 
-```
-<< Pengguna >>
-      |
-      | 1. Permintaan Chat (Query, Session ID, Auth Token)
-      v
-+-----------------------+
-|                       |
-|   Sistem Chatbot AI   |
-|       (Backend)       |
-|                       |
-+-----------------------+
-      |
-      | 2. Jawaban Chat (Answer, Sources, Session ID)
-      v
-<< Pengguna >>
+```mermaid
+graph TD
+    subgraph Sistem Chatbot AI
+        P[0. Sistem Chatbot AI]
+    end
 
+    U[Pengguna]
+    A[Admin]
 
-<< Admin >>
-      |
-      | 3. Data untuk Ingest (PDF, URL)
-      v
-+-----------------------+
-|                       |
-|   Sistem Chatbot AI   |
-|       (Backend)       |
-|                       |
-+-----------------------+
-      |
-      | 4. Status Ingest
-      v
-<< Admin >>
+    U -- Permintaan Login --> P
+    P -- Respons Token & UI --> U
+    U -- Query Chat --> P
+    P -- Jawaban Chat --> U
+    A -- Dokumen Pengetahuan --> P
+    P -- Status Ingest --> A
 ```
 
-### Penjelasan Alur Data (Level 0)
-
-1.  **Permintaan Chat**: Pengguna mengirimkan pertanyaan (`Query`), `Session ID` (jika ada), dan `Auth Token` (jika login) ke sistem.
-2.  **Jawaban Chat**: Sistem memberikan jawaban (`Answer`), sumber referensi (`Sources`), dan `Session ID` kembali ke pengguna.
-3.  **Data untuk Ingest**: Administrator mengirimkan data baru dalam bentuk file PDF atau URL untuk dipelajari oleh sistem.
-4.  **Status Ingest**: Sistem memberikan konfirmasi atau status dari proses penyerapan data kepada Admin.
+**Penjelasan Alur Data Level 0:**
+- **Permintaan Login:** Pengguna mengirimkan kredensial untuk otentikasi.
+- **Respons Token & UI:** Sistem memberikan token akses dan antarmuka pengguna setelah login berhasil.
+- **Query Chat:** Pengguna mengirimkan pertanyaan ke sistem.
+- **Jawaban Chat:** Sistem memberikan jawaban yang relevan berdasarkan pemrosesan internal.
+- **Dokumen Pengetahuan:** Admin mengunggah atau menyediakan dokumen sebagai basis pengetahuan untuk chatbot.
+- **Status Ingest:** Sistem memberikan umpan balik kepada Admin mengenai status proses ingest dokumen.
 
 ---
 
-## Level 1: Diagram Rinci
+## Level 1: DFD Sistem
 
-Diagram ini memecah "Sistem Chatbot AI" menjadi proses-proses utama, penyimpanan data, dan interaksinya dengan layanan eksternal.
+DFD Level 1 memecah proses utama "Sistem Chatbot AI" menjadi sub-proses yang lebih detail, menunjukkan bagaimana data mengalir di antara proses-proses ini dan penyimpanan data internal.
 
-```
-<< Pengguna >>
-     |  
-     | 1. Chat Request (Query, Session ID, Auth Token)
-     v
-+--------------------+
-|                    |
-| 1.0 API Endpoint   |
-|    (chat.py)       |
-|                    |
-+---------+----------+
-          | 2. (Query, Session ID, User ID)
-          v
-+---------+----------+
-|                    |    3. Get History (Session ID, User ID)    +--------------------+
-| 2.0 RAG Service    +------------------------------------------->| 3.0 Chat History   |
-| (rag_service.py)   |                                            |   Service          |
-+--------------------+<-------------------------------------------+--------------------+
-          |           4. Formatted History                               | 5. DB Query
-          | 6. Get Relevant Docs (Query)                                 v
-          v                                                      { A. Chat History DB }
-+---------+----------+                                             {    (Supabase)    }
-|                    |                                                     ^
-| 4.0 Vector Store   |<----------------------------------------------------+ 12. Save Messages
-| (Azure AI Search)  |
-+--------------------+
-          |
-          | 7. Relevant Docs
-          v
-+---------+----------+
-|                    |
-| 2.0 RAG Service    |  8. Prompt (History, Context, Query)
-| (Lanjutan)         +-------------------------------------------> << B. Azure OpenAI LLM >>
-+--------------------+<-------------------------------------------
-          |           9. Generated Answer
-          | 10. Save to History (User Query, AI Answer, User ID)
-          v
-+---------+----------+
-| 3.0 Chat History   |
-|   Service          |
-+--------------------+
-          |
-          | 11. (OK)
-          v
-+---------+----------+
-| 2.0 RAG Service    |
-| (Final)            |
-+---------+----------+
-          |
-          | 13. Final Response (Answer, Sources)
-          v
-+---------+----------+
-| 1.0 API Endpoint   |
-+--------------------+
-          |
-          | 14. HTTP Response (Answer, Sources, Session ID)
-          v
-     << Pengguna >>
+```mermaid
+graph TD
+    U[Pengguna]
+    A[Admin]
+
+    subgraph Sistem Chatbot AI
+        P1[1.0 Proses Ingest Dokumen]
+        P2[2.0 Proses Autentikasi]
+        P3[3.0 Proses Chat RAG]
+        P4[4.0 Proses Manajemen Riwayat]
+
+        D1[(D1: Indeks Pencarian)]
+        D2[(D2: Database Aplikasi)]
+    end
+
+    %% Alur Autentikasi
+    U -- Kredensial Login --> P2
+    P2 -- Data Pengguna --> D2
+    P2 -- Token Akses --> U
+
+    %% Alur Ingest
+    A -- Dokumen Baru --> P1
+    P1 -- Data Terstruktur & Vektor --> D1
+    P1 -- Status Ingest --> A
+
+    %% Alur Chat
+    U -- Query & Token --> P3
+    P3 -- Query untuk Konteks --> D1
+    D1 -- Konteks Relevan --> P3
+    P3 -- Jawaban Final --> U
+    P3 -- Data Sesi Chat --> P4
+
+    %% Alur Riwayat
+    P4 -- Simpan Riwayat --> D2
+    U -- Permintaan Riwayat Chat --> P4
+    P4 -- Ambil Riwayat --> D2
+    P4 -- Data Riwayat --> U
 ```
 
-### Komponen
+**Penjelasan Proses Level 1:**
+1.  **1.0 Proses Ingest Dokumen:** Bertanggung jawab untuk menerima dokumen dari Admin, memprosesnya (parsing, chunking, embedding), dan menyimpannya ke dalam **D1: Indeks Pencarian**.
+2.  **2.0 Proses Autentikasi:** Mengelola login pengguna, memverifikasi kredensial dengan data di **D2: Database Aplikasi**, dan menerbitkan token akses.
+3.  **3.0 Proses Chat RAG (Retrieval-Augmented Generation):** Proses inti yang menerima query dari pengguna, mengambil konteks dari **D1: Indeks Pencarian**, berinteraksi dengan model bahasa (LLM), dan menghasilkan jawaban. Proses ini akan dirinci di Level 2.
+4.  **4.0 Proses Manajemen Riwayat:** Menyimpan detail percakapan dari Proses Chat ke **D2: Database Aplikasi** dan mengambilnya kembali saat pengguna ingin melihat riwayat.
 
-*   **Proses (Persegi Panjang)**: Komponen sistem yang mentransformasikan data.
-    *   `1.0 API Endpoint`: Menerima permintaan HTTP dan mengirimkan respons.
-    *   `2.0 RAG Service`: Otak dari aplikasi, mengorkestrasi pengambilan data, pembuatan prompt, dan pemanggilan AI.
-    *   `3.0 Chat History Service`: Mengelola logika untuk menyimpan dan mengambil riwayat percakapan dari database.
-    *   `4.0 Vector Store`: Komponen yang bertanggung jawab untuk mencari dokumen yang relevan (retriever).
-*   **Penyimpanan Data (Kurung Kurawal)**:
-    *   `{A. Chat History DB}`: Database Supabase yang menyimpan semua pesan dari setiap sesi, termasuk `user_id` jika pengguna terautentikasi.
-*   **Entitas Eksternal (Kurung Siku Ganda)**:
-    *   `<< Pengguna >>`: Pengguna akhir yang berinteraksi dengan chatbot, bisa anonim atau terautentikasi.
-    *   `<< B. Azure OpenAI LLM >>`: Model bahasa dari Azure yang menghasilkan jawaban.
+---
 
-### Penjelasan Alur Data (Level 1)
+## Level 2: DFD Rincian Proses 3.0 Chat RAG
 
-1.  **Request**: Pengguna mengirim `Chat Request` ke `API Endpoint`. Permintaan ini sekarang dapat menyertakan `Auth Token` jika pengguna login.
-2.  **Validasi & Panggilan Service**: Endpoint memvalidasi `Auth Token` (jika ada) untuk mendapatkan `User ID`. Kemudian memanggil `RAG Service` dengan `Query`, `Session ID`, dan `User ID`.
-3.  **Ambil Riwayat**: `RAG Service` meminta `Chat History Service` untuk mengambil riwayat obrolan. `Chat History Service` akan memprioritaskan pencarian berdasarkan `User ID` jika tersedia, atau `Session ID` untuk pengguna anonim.
-4.  **Kirim Riwayat**: `Chat History Service` mengembalikan riwayat yang sudah diformat.
-5.  **Query DB**: `Chat History Service` menjalankan query ke `Chat History DB` (Supabase) untuk mendapatkan pesan dari 24 jam terakhir, difilter berdasarkan `User ID` atau `Session ID`.
-6.  **Ambil Dokumen**: `RAG Service` mengirim `Query` ke `Vector Store` (Azure AI Search) untuk mencari dokumen relevan.
-7.  **Kirim Dokumen**: `Vector Store` mengembalikan dokumen yang paling relevan.
-8.  **Kirim Prompt**: `RAG Service` menggabungkan riwayat obrolan, dokumen relevan, dan query pengguna menjadi sebuah *prompt* dan mengirimkannya ke `Azure OpenAI LLM`.
-9.  **Terima Jawaban**: LLM mengembalikan jawaban yang dihasilkan.
-10. **Simpan Riwayat**: `RAG Service` memanggil `Chat History Service` untuk menyimpan pertanyaan pengguna dan jawaban AI, termasuk `User ID` jika tersedia.
-11. **Konfirmasi Simpan**: `Chat History Service` memberikan konfirmasi setelah pesan disimpan.
-12. **Tulis ke DB**: `Chat History Service` menulis data pesan baru ke `Chat History DB`.
-13. **Kirim Respons Internal**: `RAG Service` mengemas jawaban akhir dan sumbernya, lalu mengirimkannya kembali ke `API Endpoint`.
-14. **Respons HTTP**: `API Endpoint` mengirimkan `HTTP Response` yang berisi jawaban, sumber, dan `Session ID` kembali ke Pengguna.
+DFD Level 2 ini memberikan pandangan mendalam tentang "3.0 Proses Chat RAG", yang merupakan fungsionalitas inti dari aplikasi.
+
+```mermaid
+graph TD
+    U[Pengguna]
+    D1[(D1: Indeks Pencarian)]
+    LLM[Model Bahasa (LLM Service)]
+    P4[4.0 Proses Manajemen Riwayat]
+
+    subgraph 3.0 Proses Chat RAG
+        P3_1[3.1 Validasi & Terima Query]
+        P3_2[3.2 Ambil Konteks Relevan]
+        P3_3[3.3 Bangun Prompt Gabungan]
+        P3_4[3.4 Hasilkan Jawaban]
+        P3_5[3.5 Format & Kirim Jawaban]
+    end
+
+    U -- Query & Token --> P3_1
+    P3_1 -- Query yang Divalidasi --> P3_2
+    P3_2 -- Keyword/Vektor Pencarian --> D1
+    D1 -- Dokumen Kontekstual --> P3_2
+    P3_2 -- Konteks yang Diperkaya --> P3_3
+    P3_1 -- Query Asli --> P3_3
+    P3_3 -- Prompt Gabungan --> P3_4
+    P3_4 -- Interaksi dengan LLM --> LLM
+    P3_4 -- Jawaban Mentah --> P3_5
+    P3_5 -- Jawaban Terformat --> U
+    P3_5 -- Data untuk Riwayat --> P4
+```
+
+**Penjelasan Sub-Proses Level 2:**
+- **3.1 Validasi & Terima Query:** Menerima input dari pengguna dan memvalidasi token akses untuk memastikan sesi yang sah.
+- **3.2 Ambil Konteks Relevan:** Menggunakan query yang telah divalidasi untuk melakukan pencarian (semantic/keyword search) pada **D1: Indeks Pencarian** untuk menemukan potongan informasi yang paling relevan.
+- **3.3 Bangun Prompt Gabungan:** Menggabungkan query asli dari pengguna dengan konteks yang didapat dari proses 3.2 untuk membuat sebuah prompt yang kaya informasi.
+- **3.4 Hasilkan Jawaban:** Mengirim prompt gabungan ke layanan eksternal **Model Bahasa (LLM)** dan menerima jawaban yang dihasilkan.
+- **3.5 Format & Kirim Jawaban:** Memformat jawaban dari LLM agar mudah dibaca, mengirimkannya kembali ke pengguna, dan meneruskan data percakapan (pertanyaan, jawaban, konteks) ke **Proses 4.0 Manajemen Riwayat** untuk disimpan.

@@ -66,8 +66,9 @@ async def get_chat_history(
     session_id: Optional[str] = None, # Allow session_id as query param for anonymous users
     history_service: ChatHistoryService = Depends(lambda: chat_history_service_instance),
     user_context: Tuple[Optional[str], Optional[str]] = Depends(get_optional_current_user_context)
-) -> ChatHistoryResponse: # Changed return type
+) -> ChatHistoryResponse: # Changed response_model
     user_id, access_token = user_context
+    print(f"DEBUG: get_chat_history endpoint hit! session_id: {session_id}, user_id: {user_id}")
     
     # Prioritize user_id for logged-in users, otherwise use session_id
     if user_id:
@@ -79,7 +80,7 @@ async def get_chat_history(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either session_id or a valid authentication token must be provided."
         )
-    
+    print(f"DEBUG: Returning history_messages: {history_messages}")
     return ChatHistoryResponse(messages=history_messages, session_id=session_id or "N/A") # Changed return
 
 @router.post("/clear")
