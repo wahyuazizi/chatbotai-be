@@ -89,7 +89,7 @@ class ChatHistoryService:
             logging.error(f"Error getting history from Supabase: {e}")
             return [] # Return empty list on error
 
-    async def clear_history(self, session_id: Optional[str] = None, user_id: Optional[str] = None, access_token: Optional[str] = None):
+    def clear_history(self, session_id: Optional[str] = None, user_id: Optional[str] = None, access_token: Optional[str] = None):
         """
         Clears chat history for a given session_id or user_id.
         Prioritizes user_id if provided.
@@ -101,10 +101,10 @@ class ChatHistoryService:
 
         try:
             if user_id:
-                response = await supabase_client.table("chat_messages").delete().eq("user_id", user_id).execute()
+                response = supabase_client.table("chat_messages").delete().eq("user_id", user_id).execute()
                 logging.info(f"Cleared history for user_id: {user_id}. Response: {response.data}")
             elif session_id:
-                response = await supabase_client.table("chat_messages").delete().eq("session_id", session_id).execute()
+                response = supabase_client.table("chat_messages").delete().eq("session_id", session_id).execute()
                 logging.info(f"Cleared history for session_id: {session_id}. Response: {response.data}")
             else:
                 raise ValueError("Either session_id or user_id must be provided to clear history.")

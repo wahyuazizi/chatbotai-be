@@ -83,22 +83,31 @@ async def get_chat_history(
     print(f"DEBUG: Returning history_messages: {history_messages}")
     return ChatHistoryResponse(messages=history_messages, session_id=session_id or "N/A") # Changed return
 
+class ClearChatHistoryRequest(BaseModel):
+    session_id: Optional[str] = None
+
 @router.post("/clear")
-async def clear_chat_history(
-    session_id: str = None, # Allow session_id in body for anonymous users
+def clear_chat_history(
+    request: ClearChatHistoryRequest,
     history_service: ChatHistoryService = Depends(lambda: chat_history_service_instance),
     user_context: Tuple[Optional[str], Optional[str]] = Depends(get_optional_current_user_context)
 ):
     user_id, access_token = user_context
+    session_id = request.session_id
 
-    if user_id:
-        await history_service.clear_history(user_id=user_id, access_token=access_token)
-        return {"message": "Chat history cleared for authenticated user."}
-    elif session_id:
-        await history_service.clear_history(session_id=session_id, access_token=access_token)
-        return {"message": "Chat history cleared for anonymous session."}
-    else:
+    if not user_id and not session_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either session_id or a valid authentication token must be provided to clear history."
         )
+
+    history_service.clear_history(
+        user_id=user_id, 
+        session_id=session_id, 
+        access_token=access_token
+    )
+
+    if user_id:
+        return {"message": "Chat history cleared for authenticated user."}
+    else:
+        return {"message": "Chat history cleared for anonymous session."}
