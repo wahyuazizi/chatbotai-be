@@ -1,16 +1,26 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim-buster
+# Stage 1: Builder
+FROM python:3.10-slim-buster AS builder
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt .
+# Install build dependencies
+RUN pip install --upgrade pip
 
-# Install any needed packages specified in requirements.txt
+# Copy requirements and install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the container at /app
+# Stage 2: Final Image
+FROM python:3.10-slim-buster
+
+# Set working directory
+WORKDIR /app
+
+# Copy installed dependencies from builder stage
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+
+# Copy the application code
 COPY . .
 
 # Expose the port that Uvicorn will run on
@@ -19,5 +29,5 @@ EXPOSE 8000
 # Define environment variable for FastAPI app
 ENV PYTHONPATH=/app
 
-# Run the Uvicorn server when the container launches
+# Run the Uvicorn server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

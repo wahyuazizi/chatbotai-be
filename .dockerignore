@@ -5,3 +5,7 @@ __pycache__/
 *.env
 .env.example
 uv.lock
+Dockerfile
+docker-compose.yml
+README.md
+*.md
