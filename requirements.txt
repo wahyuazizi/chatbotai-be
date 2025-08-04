@@ -13,3 +13,4 @@ langchain-community
 python-jose[cryptography]
 azure-search-documents
 langchain-azure-ai
+pydantic[email]
