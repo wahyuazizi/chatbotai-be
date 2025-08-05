@@ -1,0 +1,20 @@
+
+{
+  "routes": [
+    {
+      "route": "/api/v1/data/ingest",
+      "methods": ["POST"],
+      "allowedRoles": ["admin"]
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/static/media/*", "/static/css/*", "*.js", "*.map"]
+  },
+  "responseOverrides": {
+    "401": {
+      "redirect": "/login",
+      "statusCode": 302
+    }
+  }
+}
